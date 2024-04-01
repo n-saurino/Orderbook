@@ -1,5 +1,6 @@
 #include <iostream>
 #include <map>
+#include <unordered_map>
 #include <list>
 #include <vector>
 #include <memory>
@@ -147,6 +148,117 @@ private:
     Side side_;
     Price price_;
     Quantity quantity_;
+};
+
+class Orderbook{
+public:
+    Orderbook(){
+
+    }
+
+private:
+    struct OrderEntry{
+        OrderPointer order_;
+        OrderPointers::iterator location_;
+    };
+
+    std::map<Price, OrderPointers, std::greater<Price>> bids_;
+    std::map<Price, OrderPointers, std::less<Price>> asks_;
+    std::unordered_map<OrderId, OrderEntry> orders_;
+
+    bool CanMatch(Side side, Price price){
+        if(side == Side::Bid){
+            // no asks to match with our bid order
+            if(asks_.empty()){
+                return false;
+            }
+
+            // split the pair at the top of the asks map
+            auto& [ask_price, _] = *asks_.begin();
+            
+            return price >= ask_price ? 1 : 0;
+        
+        }else if(side == Side::Ask){
+            // no bids to match with our ask order
+            if(bids_.empty()){
+                return false;
+            }
+
+            // split the pair at the top of the asks map
+            auto& [bid_price, _] = *bids_.begin();
+
+            return price <= bid_price ? 1 : 0;
+        }
+    }
+
+    Trades MatchOrders(){
+        Trades trades;
+        trades.reserve(orders_.size());
+
+        while(true){
+            if(bids_.empty() || asks_.empty()){
+                break;
+            }
+
+            auto& [bid_price, bids] = *bids_.begin();
+            auto& [ask_price, asks] = *asks_.begin();
+
+            // there is no one crossing the market
+            if(bid_price < ask_price){
+                break;
+            }
+
+            while(!bids.empty() && !asks.empty()){
+                OrderPointer bid = *bids.begin();
+                OrderPointer ask = *asks.begin();
+                Quantity min_fill_quantity = std::min(ask->GetPrice(), bid->GetPrice());
+                bid->Fill(min_fill_quantity);
+                ask->Fill(min_fill_quantity);
+
+                if(bid->IsFilled()){
+                    bids.pop_front();
+                    orders_.erase(bid->GetOrderId());
+                }
+
+                if(ask->IsFilled()){
+                    asks.pop_front();
+                    orders_.erase(ask->GetOrderId());
+                }
+
+                if(bids.empty()){
+                    bids_.erase(bid_price);
+                }
+
+                if(asks.empty()){
+                    asks_.erase(ask_price);
+                }
+
+                trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetFilled(), bid_price}, 
+                                        TradeInfo{ask->GetOrderId(), ask->GetFilled(), ask_price}});
+            }
+
+
+            OrderPointer order = nullptr;
+
+            // Only one of these if statements should trip
+            if(!bids_.empty()){
+                auto& [bid_price, bids] = *bids_.begin();
+                order = *bids.begin();
+            }
+
+            // Only one of these if statements should trip
+            if(!asks_.empty()){
+                auto& [ask_price, asks] = *asks_.begin();
+                order = *asks.begin();
+            }
+
+            if(order->GetOrderType() == OrderType::FillAndKill){
+                CancelOrder(order->GetOrderType());
+            }    
+        }
+        return trades;
+    }
+
 };
 
 int main(int, char**){

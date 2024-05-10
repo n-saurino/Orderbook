@@ -209,13 +209,15 @@ private:
             }
 
             while(!bids.empty() && !asks.empty()){
-                OrderPointer bid = *bids.begin();
-                OrderPointer ask = *asks.begin();
-                Quantity min_fill_quantity = std::min(ask->GetPrice(), bid->GetPrice());
+                OrderPointer bid = bids.front();
+                OrderPointer ask = asks.front();
+                
+                Quantity min_fill_quantity = std::min(ask->GetRemainingQuantity(), bid->GetRemainingQuantity());
+                
                 bid->Fill(min_fill_quantity);
                 ask->Fill(min_fill_quantity);
 
-                if(bid->IsFilled()){
+                if(bid->IsFilled()){    
                     bids.pop_front();
                     orders_.erase(bid->GetOrderId());
                 }
@@ -243,13 +245,13 @@ private:
             // Only one of these if statements should trip
             if(!bids_.empty()){
                 auto& [bid_price, bids] = *bids_.begin();
-                order = *bids.begin();
+                order = bids.front();
             }
 
             // Only one of these if statements should trip
             if(!asks_.empty()){
                 auto& [ask_price, asks] = *asks_.begin();
-                order = *asks.begin();
+                order = asks.front();
             }
 
             if(order->GetOrderType() == OrderType::FillAndKill){

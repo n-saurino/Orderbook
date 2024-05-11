@@ -261,6 +261,57 @@ private:
         return trades;
     }
 
+public:
+    Trades AddOrder(OrderPointer order){
+        if(orders_.contains(order->GetOrderId())){
+            return{};
+        }
+
+        if(order->GetOrderType() == OrderType::FillAndKill && !CanMatch(order->GetSide(), order->GetPrice())){
+            return {};
+        }
+
+        OrderPointers::iterator iterator;
+
+        if(order->GetSide() == Side::Bid){
+            auto& orders = bids_[order->GetPrice()];
+            orders.push_back(order);
+            iterator = std::next(orders.begin(), orders.size() - 1);
+        }else{
+            auto& orders = asks_[order->GetPrice()];
+            orders.push_back(order);
+            iterator = std::next(orders.begin(), orders.size() - 1);
+        }
+
+        orders_.insert({order->GetOrderId(), OrderEntry(order, iterator)});
+        return MatchOrders();
+    }
+
+    void CancelOrder(OrderId order_id){
+        if(!orders_.contains(order_id)){
+            return;
+        }
+        
+        const auto& [order, order_iterator] = orders_.at(order_id);
+        orders_.erase(order_id);
+
+        if(order->GetSide() == Side::Ask){
+            auto price = order->GetPrice();
+            auto& orders = asks_.at(price);
+            orders.erase(order_iterator);
+            if(orders.empty()){
+                asks_.erase(price);
+            }
+        }else{
+            auto price = order->GetPrice();
+            auto& orders = bids_.at(price);
+            if(orders.empty()){
+                bids_.erase(price);
+            }
+
+        }
+    }
+
 };
 
 int main(int, char**){

@@ -141,7 +141,11 @@ public:
     OrderModify(OrderId order_id, Side side, Price price, Quantity quantity): 
                 order_id_(order_id), side_(side), price_(price), quantity_(quantity){
 
-                } 
+                }
+
+    OrderId GetOrderId() const{
+        return order_id_;
+    }
 
 private:
     OrderId order_id_;
@@ -238,30 +242,34 @@ private:
                 trades.push_back(Trade{TradeInfo{bid->GetOrderId(), bid->GetFilled(), bid_price}, 
                                         TradeInfo{ask->GetOrderId(), ask->GetFilled(), ask_price}});
             }
-
-
-            OrderPointer order = nullptr;
-
-            // Only one of these if statements should trip
-            if(!bids_.empty()){
-                auto& [bid_price, bids] = *bids_.begin();
-                order = bids.front();
-            }
-
-            // Only one of these if statements should trip
-            if(!asks_.empty()){
-                auto& [ask_price, asks] = *asks_.begin();
-                order = asks.front();
-            }
-
-            if(order->GetOrderType() == OrderType::FillAndKill){
-                CancelOrder(order->GetOrderType());
-            }    
         }
+
+
+        OrderPointer order = nullptr;
+
+        // Only one of these if statements should trip
+        if(!bids_.empty()){
+            auto& [bid_price, bids] = *bids_.begin();
+            order = bids.front();
+            if(order->GetOrderType() == OrderType::FillAndKill){
+                CancelOrder(order->GetOrderId());
+            }
+        }
+
+        // Only one of these if statements should trip
+        if(!asks_.empty()){
+            auto& [ask_price, asks] = *asks_.begin();
+            order = asks.front();
+            if(order->GetOrderType() == OrderType::FillAndKill){
+                CancelOrder(order->GetOrderId());
+            }
+        }
+
         return trades;
     }
 
 public:
+
     Trades AddOrder(OrderPointer order){
         if(orders_.contains(order->GetOrderId())){
             return{};
@@ -310,6 +318,39 @@ public:
             }
 
         }
+    }
+
+    Trades MatchOrder(OrderModify order){
+        if(!orders_.contains(order.GetOrderId())){
+            return{};
+        }
+
+        const auto& [existing_order, _] = orders_.at(order.GetOrderId());
+        CancelOrder(order.GetOrderId());
+        return AddOrder(order.ToOrderPointer(existing_order->GetOrderType()));
+    }
+
+    std::size_t Size() const {return orders_.size()};
+
+    OrderbookLevelInfos GetOrderInfos() const{
+        LevelInfos bid_infos, ask_infos;
+        bid_infos.reserve(orders_.size());
+        ask_infos.reserve(orders_.size());
+
+        auto CreateLevelInfos = [](Price price, const OrderPointers& orders){
+            return LevelInfo{price, std::accumulate(orders.begin(), orders.end(), (Quantity)0,[](std::size_t running_sum, const OrderPointer& order){
+                return running_sum + order->GetRemainingQuantity();
+            })};
+        };
+        for(const auto& [price, orders] : bids_){
+            bid_infos.push_back(CreateLevelInfos(price, orders));
+        }
+
+        for(const auto& [price, orders] : asks_){
+            ask_infos.push_back(CreateLevelInfos(price, orders));
+        }
+
+        return OrderBookLevelInfos{bid_infos, ask_infos};
     }
 
 };
